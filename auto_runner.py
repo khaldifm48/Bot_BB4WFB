@@ -33,3 +33,11 @@ while True:
     schedule.run_pending()
     time.sleep(1)
 
+# تذكير بتحديث الانحياز الأسبوعي
+def weekly_bias_reminder():
+    msg = "📝 <b>تذكير أسبوعي</b>\n\nيرجى تحديث الانحياز الأسبوعي في ملف:\n<code>weekly_bias.txt</code>\n\nمثال: صعود / محايد / هبوط"
+    send_telegram_alert(msg)
+
+# كل سبت الساعة 10:00 صباحًا
+schedule.every().saturday.at("10:00").do(weekly_bias_reminder)
+
