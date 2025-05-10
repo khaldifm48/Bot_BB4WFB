@@ -1,43 +1,44 @@
-import os
-import schedule
 import time
 import subprocess
+import schedule
+import os
 
-base_dir = os.path.expanduser("~/Desktop/Bot_BB4WFB")
-
-# تعريف المهام
+# تحديد المجلد الحالي تلقائيًا
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
 def run_bot():
-    print("\n🚀 بدء تشغيل WSF_Bot...")
-    print("\n🔄 تحديث البيانات...")
+    print("🚀 بدء تشغيل WSF_Bot...")
+    print("————————————————————————————————————————")
+
+    print("🔍 تشغيل wsf_data_fetcher.py ...")
     subprocess.run(["python3", os.path.join(base_dir, "wsf_data_fetcher.py")])
 
-    print("\n🔍 تحليل SMT...")
+    print("🔍 تشغيل smt_scanner_1h.py ...")
     subprocess.run(["python3", os.path.join(base_dir, "smt_scanner_1h.py")])
 
-    print("\n🎯 تحليل فرص 15m...")
+    print("🔍 تشغيل smart_consolidation_entry.py ...")
     subprocess.run(["python3", os.path.join(base_dir, "smart_consolidation_entry.py")])
 
-    print("\n📈 تحليل فرص 4H...")
+    print("🔍 تشغيل strategy_entry.py ...")
     subprocess.run(["python3", os.path.join(base_dir, "strategy_entry.py")])
 
-    print("\n✅ انتهى تشغيل البوت.\n")
+    print("📨 تشغيل telegram_alert.py ...")
+    subprocess.run(["python3", os.path.join(base_dir, "telegram_alert.py")])
 
-# جدولة كل 10 دقائق
+    print("✅ انتهى تشغيل البوت.")
+    print("————————————————————————————————————————\n")
+
+# كل 10 دقائق
 schedule.every(10).minutes.do(run_bot)
 
 print("⏱️ تم تفعيل الجدولة. البوت سيعمل كل 10 دقائق.")
-print("اضغط Ctrl+C للإيقاف.")
+print("اضغط Ctrl+C للإيقاف.\n")
 
+# تشغيل أول مرة فورًا
+run_bot()
+
+# التكرار
 while True:
     schedule.run_pending()
     time.sleep(1)
-
-# تذكير بتحديث الانحياز الأسبوعي
-def weekly_bias_reminder():
-    msg = "📝 <b>تذكير أسبوعي</b>\n\nيرجى تحديث الانحياز الأسبوعي في ملف:\n<code>weekly_bias.txt</code>\n\nمثال: صعود / محايد / هبوط"
-    send_telegram_alert(msg)
-
-# كل سبت الساعة 10:00 صباحًا
-schedule.every().saturday.at("10:00").do(weekly_bias_reminder)
 
