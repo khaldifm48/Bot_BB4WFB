@@ -1,0 +1,6 @@
+pandas
+yfinance
+python-binance
+requests
+schedule
+
