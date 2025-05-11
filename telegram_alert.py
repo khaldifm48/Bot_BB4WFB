@@ -19,8 +19,6 @@ def send_message(text):
     else:
         print(f"❌ فشل الإرسال: {response.text}")
 
-from fcm_notifier import send_fcm_notification
-send_fcm_notification("🚨 إشارة جديدة", "تم رصد فرصة جديدة من WSF_Bot ✅")
 
 def load_entry_signals():
     path = os.path.expanduser("~/Desktop/Bot_BB4WFB/data/entry_signals.csv")

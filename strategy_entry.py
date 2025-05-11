@@ -19,8 +19,6 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
 
-from fcm_notifier import send_fcm_notification
-send_fcm_notification("🚨 إشارة جديدة", "تم رصد فرصة جديدة من WSF_Bot ✅")
 
 def load_csv(symbol):
     path = f"data/{symbol}_4h.csv"
