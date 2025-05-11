@@ -1,59 +1,86 @@
-import pandas as pd
 import os
-from datetime import timedelta
+import pandas as pd
+from datetime import datetime, timedelta
+import requests
 
-# تحديد مجلد البيانات
-DATA_DIR = "data"
-SIGNAL_FILE = os.path.join(DATA_DIR, "smt_signals.csv")
+# بيانات التليجرام
+TELEGRAM_TOKEN = "7801456150:AAHO6AHaUUS8M6H_m_RYD-Fgzk_Mg72NiXk"
+CHAT_ID = "663235772"
 
-# تحديد مدة الكونسلديشن (مثلاً 6 ساعات)
-CONSOLIDATION_HOURS = 6
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"❌ Telegram Error: {e}")
 
-def is_consolidating(df, threshold=0.3):
-    """
-    يتحقق إذا كانت العملة تتحرك ضمن نطاق ضيق لفترة معينة (تُعتبر Consolidation)
-    """
-    recent = df[-int(CONSOLIDATION_HOURS * 4):]  # عدد شموع 15 دقيقة في 6 ساعات
-    high = recent["high"].max()
-    low = recent["low"].min()
-    change_percent = ((high - low) / low) * 100
-    return change_percent < threshold, change_percent
+def load_csv(symbol):
+    path = f"data/{symbol}_15m.csv"
+    if not os.path.exists(path):
+        print(f"❌ البيانات غير موجودة: {path}")
+        return None
+    df = pd.read_csv(path)
+    df.columns = [col.strip().capitalize() for col in df.columns]
+    if 'Date' not in df.columns or 'Close' not in df.columns:
+        print(f"❌ تنسيق غير صالح في الملف: {path}")
+        return None
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    df = df.set_index("Date")
+    df = df.sort_index()
+    return df
 
-def detect_consolidation():
-    if not os.path.exists(SIGNAL_FILE):
-        print("❌ ملف إشارات SMT غير موجود.")
-        return
+def is_consolidating(df, hours=6, max_range=0.5):
+    recent_data = df.last(f"{hours}h")
+    if len(recent_data) < 5:
+        return False, 0
+    high = recent_data["High"].max()
+    low = recent_data["Low"].min()
+    perc_range = ((high - low) / low) * 100
+    return perc_range < max_range, perc_range
 
-    smt_df = pd.read_csv(SIGNAL_FILE)
-    entries = []
+def detect_sweep(df):
+    last_candle = df.iloc[-1]
+    second_last = df.iloc[-2]
+    return last_candle["Low"] < second_last["Low"]
 
-    for _, row in smt_df.iterrows():
-        symbol = row["symbol"]
-        pair = symbol.replace("USDT", "")  # مثال: AVAXUSDT → AVAX
-        file_path = os.path.join(DATA_DIR, f"{pair}USDT_15m.csv")
+def detect_rejection_block(df):
+    last = df.iloc[-1]
+    body = abs(last["Close"] - last["Open"])
+    wick = last["High"] - last["Low"]
+    return wick > 2 * body and last["Close"] > last["Open"]
 
-        if not os.path.exists(file_path):
-            print(f"❌ بيانات {symbol} غير موجودة.")
-            continue
+symbols = ["BTCUSDT", "AVAXUSDT"]
 
-        df = pd.read_csv(file_path)
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df = df.dropna(subset=["Date"])
-        df.set_index("Date", inplace=True)
-        df.columns = [col.lower().strip() for col in df.columns]
+for symbol in symbols:
+    df = load_csv(symbol)
+    if df is None:
+        continue
 
-        cond, pct = is_consolidating(df)
-        if cond:
-            entries.append((symbol, round(pct, 2)))
-            print(f"✅ {symbol} في Consolidation ({round(pct, 2)}%)")
+    cons, perc = is_consolidating(df, hours=6, max_range=0.6)
 
-    if not entries:
-        print("❌ لا توجد فرص Consolidation حالياً.")
-    else:
-        print("\n📊 فرص دخول ممكنة:")
-        for sym, pct in entries:
-            print(f"• {sym} ({pct}%)")
+    if cons:
+        sweep = detect_sweep(df)
+        rejection = detect_rejection_block(df)
 
-if __name__ == "__main__":
-    detect_consolidation()
+        if sweep and rejection:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            msg = f"""
+📊 <b>فرصة دخول ذكية</b>
+
+<b>📈 الزوج:</b> {symbol}
+<b>⏰ الفريم:</b> 15m
+<b>📦 Consolidation:</b> تم رصده لمدة 6 ساعات (نطاق: {perc:.2f}%)
+<b>⚡ Sweep:</b> قاع تم كسره للتو
+<b>🧱 Rejection Block:</b> تم تأكيده ✅
+<b>📅 التوقيت:</b> {now}
+
+#WSF #SmartEntry #{symbol}
+"""
+            send_telegram_alert(msg)
 

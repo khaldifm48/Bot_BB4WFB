@@ -1,68 +1,42 @@
-import os
-import yfinance as yf
-from binance.client import Client
+import ccxt
 import pandas as pd
-from datetime import datetime, timedelta
+import os
+from datetime import datetime
 
-os.makedirs("data", exist_ok=True)
-
+# قائمة العملات المطلوبة
 symbols = [
-    "BTC", "ETH", "AVAX", "DOGE", "PEPE", "BNB", "XRP", "ADA", "LINK", "SOL",
-    "MATIC", "ARB", "APT", "OP", "SUI", "LDO", "INJ", "GRT", "FTM", "NEAR",
-    "AAVE", "SNX", "CRV", "GMX", "RPL", "DYDX", "UNI", "CAKE", "LTC", "COMP",
-    "DOT", "ATOM", "TRX", "EOS", "ZIL", "ONE", "FLOW", "BAND", "CHZ", "ENJ",
-    "XLM", "XTZ", "KSM", "STX", "COTI", "TWT", "FET", "RNDR", "NKN", "WOO"
+    "BTC/USDT", "ETH/USDT", "AVAX/USDT", "DOGE/USDT", "PEPE/USDT", "BNB/USDT",
+    "XRP/USDT", "ADA/USDT", "LINK/USDT", "SOL/USDT", "MATIC/USDT", "ARB/USDT",
+    "APT/USDT", "OP/USDT", "SUI/USDT", "LDO/USDT", "INJ/USDT", "GRT/USDT",
+    "FTM/USDT", "NEAR/USDT", "AAVE/USDT", "SNX/USDT", "CRV/USDT", "GMX/USDT",
+    "RPL/USDT", "DYDX/USDT", "UNI/USDT", "CAKE/USDT", "LTC/USDT", "COMP/USDT",
+    "DOT/USDT", "ATOM/USDT", "TRX/USDT", "EOS/USDT", "ZIL/USDT", "ONE/USDT",
+    "FLOW/USDT", "BAND/USDT", "CHZ/USDT", "ENJ/USDT", "XLM/USDT", "XTZ/USDT",
+    "KSM/USDT", "STX/USDT", "COTI/USDT", "TWT/USDT", "FET/USDT", "RNDR/USDT", "NKN/USDT", "WOO/USDT"
 ]
 
-def fetch_binance_data():
-    client = Client()
-    for symbol in symbols:
-        base = f"{symbol}USDT"
-        try:
-            klines_1h = client.get_klines(symbol=base, interval=Client.KLINE_INTERVAL_1HOUR)
-            df_1h = pd.DataFrame(klines_1h, columns=[
-                "Time", "Open", "High", "Low", "Close", "Volume",
-                "Close_time", "Quote_asset_volume", "Number_of_trades",
-                "Taker_buy_base_volume", "Taker_buy_quote_volume", "Ignore"])
-            df_1h["Date"] = pd.to_datetime(df_1h["Time"], unit="ms")
-            df_1h.to_csv(f"data/{symbol}USDT_1h.csv", index=False)
-            print(f"✅ Binance 1H data saved: data/{symbol}USDT_1h.csv")
+# تهيئة Binance
+binance = ccxt.binance()
+os.makedirs("data", exist_ok=True)
 
-            klines_15m = client.get_klines(symbol=base, interval=Client.KLINE_INTERVAL_15MINUTE)
-            df_15m = pd.DataFrame(klines_15m, columns=[
-                "Time", "Open", "High", "Low", "Close", "Volume",
-                "Close_time", "Quote_asset_volume", "Number_of_trades",
-                "Taker_buy_base_volume", "Taker_buy_quote_volume", "Ignore"])
-            df_15m["Date"] = pd.to_datetime(df_15m["Time"], unit="ms")
-            df_15m.to_csv(f"data/{symbol}USDT_15m.csv", index=False)
-            print(f"✅ Binance 15m data saved: data/{symbol}USDT_15m.csv")
-
-        except Exception as e:
-            print(f"❌ Error fetching {symbol}: {e}")
-
-def fetch_usdt_dominance():
-    file_path = "data/usdt_dominance_data.csv"
-    if os.path.exists(file_path):
-        try:
-            df_old = pd.read_csv(file_path)
-            last_date = pd.to_datetime(df_old['Date'].iloc[-1])
-            if last_date.date() == datetime.now().date():
-                print("⏩ USDT Dominance already updated today.")
-                return
-        except Exception as e:
-            print(f"⚠️ Error reading existing USDT Dominance file: {e}")
-
+# تحميل OHLCV
+def fetch_ohlcv(symbol, timeframe="1h", limit=200):
     try:
-        df = yf.download("USDT-USD", interval="1d")
-        if not df.empty:
-            df.reset_index(inplace=True)
-            df.to_csv(file_path, index=False)
-            print("✅ USDT Dominance data saved.")
-        else:
-            print("⚠️ No data returned for USDT-USD")
+        ohlcv = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
+        return df[["date", "open", "high", "low", "close", "volume"]]
     except Exception as e:
-        print(f"❌ فشل تحميل USDT Dominance: {e}")
+        print(f"❌ Error loading {symbol} @ {timeframe}: {e}")
+        return None
 
-fetch_binance_data()
-fetch_usdt_dominance()
+# تنزيل البيانات لكل فريم
+for symbol in symbols:
+    base = symbol.replace("/", "")
+    for tf in ["1d", "4h", "1h", "15m"]:
+        df = fetch_ohlcv(symbol, tf)
+        if df is not None:
+            filename = f"data/{base}_{tf}.csv"
+            df.to_csv(filename, index=False)
+            print(f"✅ Saved: {filename}")
 

@@ -3,4 +3,5 @@ yfinance
 python-binance
 requests
 schedule
+ccxt==4.2.71
 

@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import requests
 
+# ✅ إعدادات التليغرام
 TELEGRAM_TOKEN = "7801456150:AAHO6AHaUUS8M6H_m_RYD-Fgzk_Mg72NiXk"
 CHAT_ID = "663235772"
 
@@ -18,81 +19,55 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
 
-def load_price_data(symbol):
-    path = f"data/{symbol}USDT_15m.csv"
+def load_csv(symbol):
+    path = f"data/{symbol}_4h.csv"
     if not os.path.exists(path):
         print(f"❌ البيانات غير موجودة: {path}")
         return None
     df = pd.read_csv(path)
-    df.columns = [c.strip().capitalize() for c in df.columns]
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date'])
-    df = df.sort_values(by='Date')
-    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-    df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
-    df['High'] = pd.to_numeric(df['High'], errors='coerce')
+    df.columns = [col.strip().capitalize() for col in df.columns]
+    if 'Date' not in df.columns or 'Close' not in df.columns:
+        return None
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    df = df.set_index("Date")
+    df = df.sort_index()
     return df
 
-def detect_consolidation(df, lookback=24):
-    recent = df.tail(lookback)
-    if recent['Close'].max() == 0 or recent['Close'].min() == 0:
-        return False
-    range_pct = (recent['Close'].max() - recent['Close'].min()) / recent['Close'].min()
-    return range_pct < 0.015
-
-def detect_sweep(df):
-    lows = df['Low'].tail(5)
-    return lows.iloc[-1] < lows.min()
-
-def detect_rejection_block(df):
+def detect_entry(df):
     last = df.iloc[-1]
-    body = abs(last['Close'] - last['Open'])
-    wick = last['High'] - max(last['Close'], last['Open'])
-    return wick > 2 * body
+    prev = df.iloc[-2]
 
-def check_entry_conditions(symbol):
-    df = load_price_data(symbol)
-    if df is None or len(df) < 30:
+    wick_size = (last["High"] - last["Low"]) > 2 * abs(last["Close"] - last["Open"])
+    fvg = abs(last["Open"] - prev["Close"]) > 0.001 * prev["Close"]
+    body_above_mid = last["Close"] > (last["High"] + last["Low"]) / 2
+    return wick_size and fvg and body_above_mid
+
+def check_bbr(df):
+    if len(df) < 3:
         return False
-    in_consolidation = detect_consolidation(df)
-    has_sweep = detect_sweep(df)
-    rejection = detect_rejection_block(df)
-    return in_consolidation and has_sweep and rejection
+    a, b, c = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    return (a["High"] < b["Low"]) and (b["Low"] > c["High"])
 
-def main():
-    smt_path = "data/smt_signals.csv"
-    if not os.path.exists(smt_path):
-        print("❌ ملف إشارات SMT غير موجود.")
-        return
+symbols = ["BTCUSDT", "AVAXUSDT"]
 
-    smt_df = pd.read_csv(smt_path)
-    if smt_df.empty:
-        print("❌ لا توجد إشارات SMT حالياً.")
-        return
+for symbol in symbols:
+    df = load_csv(symbol)
+    if df is None or len(df) < 3:
+        continue
 
-    for _, row in smt_df.iterrows():
-        symbol = row['symbol'].strip().upper().replace("USDT", "")
-        entry_ok = check_entry_conditions(symbol)
-        if entry_ok:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            msg = f"""
-📊 <b>فرصة دخول ذكية</b>
+    if detect_entry(df) or check_bbr(df):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        msg = f"""
+📊 <b>فرصة دخول 4H</b>
 
-<b>⏱️ الفريم:</b> 15m
-<b>📈 العملة:</b> {symbol}USDT
+<b>📈 الزوج:</b> {symbol}
+<b>⏰ الفريم:</b> 4H
+<b>🕯️ النموذج:</b> Wick + FVG
+<b>🔁 تأكيد BBR:</b> {"✅" if check_bbr(df) else "❌"}
 <b>📅 التوقيت:</b> {now}
 
-✅ Consolidation ملحوظ
-✅ حصل Sweep للقاع
-✅ تأكيد Rejection Block موجود
-
-📌 مؤكد من إشارات SMT السابقة
-#WSF #Entry #{symbol}USDT
+#WSF #FVG #BBR #{symbol}
 """
-            send_telegram_alert(msg)
-        else:
-            print(f"⛔️ لم تتحقق الشروط على {symbol}.")
-
-if __name__ == "__main__":
-    main()
+        send_telegram_alert(msg)
 

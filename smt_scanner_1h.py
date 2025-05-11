@@ -42,7 +42,7 @@ def calculate_slope(df, length=5):
 def check_smt_general(btc_df, alt_df):
     btc_slope = calculate_slope(btc_df)
     alt_slope = calculate_slope(alt_df)
-    return btc_slope * alt_slope < 0  # اتجاه معاكس = SMT
+    return btc_slope * alt_slope < 0  # دايفرجنسي إذا الاتجاهات عكس بعض
 
 def check_smt_usdt(btc_df, usdt_df):
     btc = btc_df['Close'].iloc[-2:]
@@ -61,12 +61,13 @@ symbols = [
 ]
 
 btc = load_csv("BTC")
-usdt = load_csv("USDT")  # لازم تكون موجودة بصيغة USDTUSDT_1h.csv أو يتم تحميلها من مصدر خارجي
+usdt = load_csv("USDT")
 
 if btc is None:
     print("❌ لا يمكن تحميل BTC")
     exit()
 
+# 🔁 SMT مع USDT Dominance (آخر شمعتين فقط)
 if usdt is not None and check_smt_usdt(btc, usdt):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     msg = f"""
@@ -76,14 +77,14 @@ if usdt is not None and check_smt_usdt(btc, usdt):
 <b>📊 الانفصال:</b> BTC ↔️ USDT Dominance
 <b>📅 التاريخ:</b> {now}
 
-🔁 تم رصد Divergence سريع بين BTC و USDT.D على آخر شمعتين.
+🔁 تم رصد Divergence سريع بين BTC و USDT.D على آخر شمعتين
 📌 سيتم مراقبة فرص الدخول على فريم 15m...
 
 #WSF #SMT #BTCUSDT
 """
     send_telegram_alert(msg)
 
-# SMT مع باقي العملات بناءً على ميل السعر
+# 🔁 SMT مع باقي العملات
 for symbol in symbols:
     alt = load_csv(symbol)
     if alt is None:
