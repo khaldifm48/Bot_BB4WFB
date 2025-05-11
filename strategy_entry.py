@@ -1,55 +1,98 @@
-import pandas as pd
 import os
+import pandas as pd
+from datetime import datetime
+import requests
 
-data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-smt_path = os.path.join(data_dir, "smt_signals.csv")
+TELEGRAM_TOKEN = "7801456150:AAHO6AHaUUS8M6H_m_RYD-Fgzk_Mg72NiXk"
+CHAT_ID = "663235772"
 
-if not os.path.exists(smt_path):
-    print("❌ ملف إشارات SMT غير موجود.")
-    exit()
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"❌ Telegram Error: {e}")
 
-smt_signals = pd.read_csv(smt_path)
+def load_price_data(symbol):
+    path = f"data/{symbol}USDT_15m.csv"
+    if not os.path.exists(path):
+        print(f"❌ البيانات غير موجودة: {path}")
+        return None
+    df = pd.read_csv(path)
+    df.columns = [c.strip().capitalize() for c in df.columns]
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df = df.dropna(subset=['Date'])
+    df = df.sort_values(by='Date')
+    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
+    df['High'] = pd.to_numeric(df['High'], errors='coerce')
+    return df
 
-if smt_signals.empty:
-    print("❌ لا توجد إشارات SMT حالياً.")
-    exit()
+def detect_consolidation(df, lookback=24):
+    recent = df.tail(lookback)
+    if recent['Close'].max() == 0 or recent['Close'].min() == 0:
+        return False
+    range_pct = (recent['Close'].max() - recent['Close'].min()) / recent['Close'].min()
+    return range_pct < 0.015
 
-symbols = smt_signals['symbol'].unique()
-found = False
+def detect_sweep(df):
+    lows = df['Low'].tail(5)
+    return lows.iloc[-1] < lows.min()
 
-for symbol in symbols:
-    file_path = os.path.join(data_dir, f"{symbol}_4h.csv")
-    if not os.path.exists(file_path):
-        print(f"❌ البيانات غير موجودة: {file_path}")
-        continue
+def detect_rejection_block(df):
+    last = df.iloc[-1]
+    body = abs(last['Close'] - last['Open'])
+    wick = last['High'] - max(last['Close'], last['Open'])
+    return wick > 2 * body
 
-    df = pd.read_csv(file_path)
-    df.columns = [col.strip().lower() for col in df.columns]
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df = df.dropna(subset=['date'])
+def check_entry_conditions(symbol):
+    df = load_price_data(symbol)
+    if df is None or len(df) < 30:
+        return False
+    in_consolidation = detect_consolidation(df)
+    has_sweep = detect_sweep(df)
+    rejection = detect_rejection_block(df)
+    return in_consolidation and has_sweep and rejection
 
-    if len(df) < 20:
-        continue
+def main():
+    smt_path = "data/smt_signals.csv"
+    if not os.path.exists(smt_path):
+        print("❌ ملف إشارات SMT غير موجود.")
+        return
 
-    # نأخذ آخر شمعتين
-    prev = df.iloc[-2]
-    curr = df.iloc[-1]
+    smt_df = pd.read_csv(smt_path)
+    if smt_df.empty:
+        print("❌ لا توجد إشارات SMT حالياً.")
+        return
 
-    # Wick: سحب سيولة من الأعلى
-    wick = float(prev['high']) - float(prev['close']) > (float(prev['high']) - float(prev['low'])) * 0.5
+    for _, row in smt_df.iterrows():
+        symbol = row['symbol'].strip().upper().replace("USDT", "")
+        entry_ok = check_entry_conditions(symbol)
+        if entry_ok:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            msg = f"""
+📊 <b>فرصة دخول ذكية</b>
 
-    # FVG: شمعة جديدة فتحت فوق أعلى قمة
-    fvg = float(curr['open']) > float(prev['high'])
+<b>⏱️ الفريم:</b> 15m
+<b>📈 العملة:</b> {symbol}USDT
+<b>📅 التوقيت:</b> {now}
 
-    # Liquidity Void: قاع الشمعة الجديدة أعلى من قاع السابقة
-    liquidity_void = float(curr['low']) > float(prev['low'])
+✅ Consolidation ملحوظ
+✅ حصل Sweep للقاع
+✅ تأكيد Rejection Block موجود
 
-    if wick and fvg and liquidity_void:
-        found = True
-        print(f"✅ إشارة دخول على {symbol}")
-    else:
-        print(f"⚠️ لا يوجد نموذج واضح على {symbol}")
+📌 مؤكد من إشارات SMT السابقة
+#WSF #Entry #{symbol}USDT
+"""
+            send_telegram_alert(msg)
+        else:
+            print(f"⛔️ لم تتحقق الشروط على {symbol}.")
 
-if not found:
-    print("❌ لا توجد إشارات دخول حالياً.")
+if __name__ == "__main__":
+    main()
 
